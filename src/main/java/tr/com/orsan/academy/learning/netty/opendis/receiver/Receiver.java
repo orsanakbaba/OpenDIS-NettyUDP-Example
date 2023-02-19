@@ -1,49 +1,47 @@
 package tr.com.orsan.academy.learning.netty.opendis.receiver;
 
 import io.netty.bootstrap.Bootstrap;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.ChannelOption;
-import io.netty.channel.EventLoopGroup;
+import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.handler.logging.LogLevel;
-import io.netty.handler.logging.LoggingHandler;
+import io.netty.channel.socket.nio.NioDatagramChannel;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
+import java.net.InetAddress;
 
 public class Receiver {
 
     private static final Logger logger = LogManager.getLogger(Receiver.class);
 
     public static void main(String[] args) throws Exception {
-        String host = args[0];
         int port = Integer.parseInt(args[1]);
-        EventLoopGroup workerGroup = new NioEventLoopGroup();
-
+        final NioEventLoopGroup group = new NioEventLoopGroup();
         try {
-            Bootstrap b = new Bootstrap(); // (1)
-            b.group(workerGroup); // (2)
-            b.channel(NioSocketChannel.class); // (3)
-            b.option(ChannelOption.SO_KEEPALIVE, true);
-            b.option(ChannelOption.SO_TIMEOUT, 3);// (4)
-            b.handler(new LoggingHandler(LogLevel.INFO));
-            b.handler(new ChannelInitializer<SocketChannel>() {
-                @Override
-                public void initChannel(SocketChannel ch) throws Exception {
-                    //ch.pipeline().addLast(new SimpleNettySbeEncoder());
-                    //ch.pipeline().addLast(new SimpleClientHandler());
-                }
-            });
+            final Bootstrap b = new Bootstrap();
+            b.group(group).channel(NioDatagramChannel.class)
+                    .option(ChannelOption.SO_BROADCAST, true)
+                    .handler(new ChannelInitializer<NioDatagramChannel>() {
+                        @Override
+                        public void initChannel(final NioDatagramChannel ch) throws Exception {
 
-            // Start the client.
-            ChannelFuture f = b.connect(host, port).sync(); // (5)
+                            ChannelPipeline p = ch.pipeline();
+                            p.addLast(new IncomingPacketHandler());
+                        }
+                    });
 
+            // Bind and start to accept incoming connections.
+            Integer pPort = port;
+            InetAddress address  = InetAddress.getLocalHost();
+            System.out.printf("waiting for message %s %s",String.format(pPort.toString()),String.format( address.toString()));
+
+            ChannelFuture f = b.bind(address,port).sync(); // (5)
             // Wait until the connection is closed.
-            f.channel().closeFuture().sync();
+            f.channel().closeFuture().sync().await();
+
+
         } finally {
-            workerGroup.shutdownGracefully();
+            System.out.print("In Server Finally");
+            group.shutdownGracefully();
         }
     }
 

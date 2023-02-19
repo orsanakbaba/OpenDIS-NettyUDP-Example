@@ -1,17 +1,14 @@
 package tr.com.orsan.academy.learning.netty.opendis.publisher;
 
-import io.netty.bootstrap.ServerBootstrap;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.ChannelOption;
-import io.netty.channel.EventLoopGroup;
+import io.netty.bootstrap.Bootstrap;
+import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.handler.logging.LogLevel;
-import io.netty.handler.logging.LoggingHandler;
+import io.netty.channel.socket.nio.NioDatagramChannel;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import tr.com.orsan.academy.learning.netty.opendis.receiver.IncomingPacketHandler;
+
+import java.net.InetAddress;
 
 public class Publisher {
     private static final Logger logger = LogManager.getLogger(Publisher.class);
@@ -32,34 +29,35 @@ public class Publisher {
     }
 
     public void run() throws Exception {
-        EventLoopGroup bossGroup = new NioEventLoopGroup(); // (1)
-        EventLoopGroup workerGroup = new NioEventLoopGroup();
+        int port = Integer.parseInt(args[1]);
+        final NioEventLoopGroup group = new NioEventLoopGroup();
+        final Bootstrap b = new Bootstrap();
         try {
-            ServerBootstrap b = new ServerBootstrap(); // (2)
-            b.group(bossGroup, workerGroup)
-                    .channel(NioServerSocketChannel.class) // (3)
-                    .childHandler(new ChannelInitializer<SocketChannel>() { // (4)
+            b.group(group).channel(NioDatagramChannel.class)
+                    .option(ChannelOption.SO_BROADCAST, true)
+                    .handler(new ChannelInitializer<NioDatagramChannel>() {
                         @Override
-                        public void initChannel(SocketChannel ch) throws Exception {
-                            //ch.pipeline().addLast(new SimpleNettySbeDecoder());
+                        public void initChannel(final NioDatagramChannel ch) throws Exception {
+
+                            ChannelPipeline p = ch.pipeline();
+                            p.addLast(new IncomingPacketHandler());
                         }
-                    })
-                    .handler(new LoggingHandler(LogLevel.INFO))
-                    .option(ChannelOption.SO_BACKLOG, 128)          // (5)
-                    .childOption(ChannelOption.SO_KEEPALIVE, true); // (6)
+                    });
 
             // Bind and start to accept incoming connections.
+            Integer pPort = port;
+            InetAddress address  = InetAddress.getLocalHost();
+            System.out.printf("waiting for message %s %s",String.format(pPort.toString()),String.format( address.toString()));
 
-            ChannelFuture f = b.bind("127.0.0.1", this.port).sync(); // (7)
-            logger.debug("Netty Server started.");
+            ChannelFuture f = b.bind(address,port).sync(); // (5)
+            // Wait until the connection is closed.
+            f.channel().closeFuture().sync().await();
 
-            // Wait until the server socket is closed.
-            // In this example, this does not happen, but you can do that to gracefully
-            // shut down your server.
-            f.channel().closeFuture().sync();
+
         } finally {
-            workerGroup.shutdownGracefully();
-            bossGroup.shutdownGracefully();
+            System.out.print("In Server Finally");
+            group.shutdownGracefully();
+
         }
     }
 }
